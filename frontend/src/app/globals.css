@@ -1,0 +1,591 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+.map-container {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+}
+
+/* Layer Selector Panel */
+.layer-selector {
+  position: fixed !important;
+  top: 10px;
+  right: 60px;
+  background: rgba(255,255,255,0.95);
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  min-width: 200px;
+  font-size: 12px;
+}
+
+.layer-selector h3 {
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: #333;
+  border-bottom: 2px solid #2196F3;
+  padding-bottom: 6px;
+}
+
+.layer-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.layer-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.layer-option:hover {
+  background-color: rgba(33, 150, 243, 0.1);
+}
+
+.layer-option.active {
+  background-color: rgba(33, 150, 243, 0.15);
+}
+
+.layer-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.layer-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.2);
+}
+
+/* Info Panel */
+.info-panel {
+  position: fixed !important;
+  top: 10px;
+  left: 10px;
+  background: rgba(255,255,255,0.95);
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  min-width: 200px;
+  max-width: 240px;
+  font-size: 11px;
+}
+
+.info-panel h2 {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.info-panel .stats {
+  font-size: 11px;
+  color: #666;
+}
+
+.info-panel .stats div {
+  margin: 3px 0;
+}
+
+.info-panel .stats span {
+  font-weight: bold;
+  color: #2196F3;
+}
+
+/* Loading Indicator */
+.loading {
+  position: fixed !important;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255,255,255,0.95);
+  padding: 12px 25px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 1001;
+  font-size: 12px;
+}
+
+/* Tooltip */
+.tooltip {
+  position: fixed !important;
+  background: rgba(255,255,255,0.95);
+  padding: 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  pointer-events: none;
+  z-index: 1000;
+  max-width: 220px;
+  font-size: 10px;
+}
+
+.tooltip h3 {
+  font-size: 11px;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.tooltip p {
+  margin: 2px 0;
+  color: #666;
+}
+
+.tooltip .label {
+  color: #999;
+}
+
+.tooltip .value {
+  font-weight: 600;
+  color: #333;
+}
+
+/* Legend */
+.legend {
+  position: fixed !important;
+  bottom: 30px;
+  left: 10px;
+  background: rgba(255,255,255,0.95);
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  font-size: 11px;
+  min-width: 150px;
+  max-width: 180px;
+}
+
+.legend h4 {
+  font-size: 12px;
+  margin-bottom: 8px;
+  color: #333;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 4px;
+}
+
+.legend-section {
+  margin-bottom: 10px;
+}
+
+.legend-section:last-child {
+  margin-bottom: 0;
+}
+
+.legend-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.color-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* Zoom Info */
+.zoom-info {
+  position: fixed !important;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  z-index: 1000;
+}
+
+/* Selected Building Panel */
+.selected-building-panel {
+  position: fixed !important;
+  top: 10px;
+  left: 260px;
+  background: rgba(255,255,255,0.98);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 15px rgba(0,0,0,0.3);
+  z-index: 1001;
+  min-width: 220px;
+  max-width: 280px;
+  font-size: 12px;
+}
+
+.selected-building-panel h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: #333;
+  border-bottom: 2px solid #2196F3;
+  padding-bottom: 8px;
+}
+
+.selected-building-panel p {
+  margin: 6px 0;
+  color: #666;
+}
+
+.selected-building-panel .label {
+  color: #999;
+  font-size: 11px;
+  display: inline-block;
+  width: 80px;
+}
+
+.selected-building-panel .value {
+  font-weight: 600;
+  color: #333;
+}
+
+.selected-building-panel hr {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px solid #eee;
+}
+
+.selected-building-panel .close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #999;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.selected-building-panel .close-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+/* Active Layers Badge in Info Panel */
+.active-layers {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+}
+
+.active-layers-title {
+  font-size: 10px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.layer-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 2px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.layer-badge.building-final {
+  background-color: rgba(0, 150, 255, 0.2);
+  color: #0096ff;
+}
+
+.layer-badge.google {
+  background-color: rgba(0, 200, 200, 0.2);
+  color: #00c8c8;
+}
+
+.layer-badge.onegeo {
+  background-color: rgba(180, 100, 255, 0.2);
+  color: #b464ff;
+}
+
+/* Login Page Styles - Updated */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+}
+.login-box {
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+}
+.login-header {
+  background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+  margin: -40px -40px 30px -40px;
+  padding: 40px;
+  border-radius: 12px 12px 0 0;
+}
+.login-header h1 { color: #333; font-size: 24px; margin-bottom: 8px; }
+.login-header p { color: #666; margin-bottom: 0; }
+.login-error { background: #fee; color: #c00; padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
+.google-signin-btn {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  width: 100%; padding: 12px 24px; border: 1px solid #ddd; border-radius: 6px;
+  background: white; font-size: 16px; cursor: pointer;
+}
+.google-signin-btn:hover { background: #f8f8f8; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.login-note { margin-top: 20px; color: #999; font-size: 12px; }
+
+/* User Menu Styles */
+.user-menu {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 1002;
+}
+
+.user-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.user-avatar-placeholder {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #333;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  border: 2px solid white;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.user-dropdown {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  min-width: 200px;
+  overflow: hidden;
+}
+
+.user-info {
+  padding: 15px;
+  background: #f8f8f8;
+}
+
+.user-name {
+  font-weight: bold;
+  color: #333;
+  margin: 0 0 4px 0;
+}
+
+.user-email {
+  color: #666;
+  font-size: 12px;
+  margin: 0;
+}
+
+.user-dropdown hr {
+  margin: 0;
+  border: none;
+  border-top: 1px solid #eee;
+}
+
+.logout-button {
+  width: 100%;
+  padding: 12px 15px;
+  border: none;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  color: #c00;
+  font-size: 14px;
+}
+
+.logout-button:hover {
+  background: #fee;
+}
+
+.search-btn:hover {
+  background: #45a049;
+}
+
+/* Search Coordinates - Posisi kiri atas */
+.search-coords {
+  position: fixed !important;
+  top: 10px;
+  left: 230px;
+  background: rgba(255,255,255,0.95);
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  min-width: 180px;
+  font-size: 12px;
+}
+
+.search-coords h3 {
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: #333;
+  border-bottom: 2px solid #4CAF50;
+  padding-bottom: 6px;
+}
+
+.coord-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.coord-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.coord-field label {
+  font-size: 10px;
+  color: #666;
+}
+
+.coord-field input {
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  width: 100%;
+}
+
+.coord-field input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.search-btn {
+  width: 100%;
+  padding: 8px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.search-btn:hover {
+  background: #45a049;
+}
+
+/* Search Coordinates - Posisi kiri atas */
+.search-coords {
+  position: fixed !important;
+  top: 10px;
+  left: 230px;
+  background: rgba(255,255,255,0.95);
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  min-width: 180px;
+  font-size: 12px;
+}
+
+.search-coords h3 {
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: #333;
+  border-bottom: 2px solid #4CAF50;
+  padding-bottom: 6px;
+}
+
+.coord-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.coord-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.coord-field label {
+  font-size: 10px;
+  color: #666;
+}
+
+.coord-field input {
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  width: 100%;
+}
+
+.coord-field input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.search-btn {
+  width: 100%;
+  padding: 8px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.search-btn:hover {
+  background: #45a049;
+}

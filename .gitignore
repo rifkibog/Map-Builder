@@ -1,0 +1,35 @@
+# Next.js build output
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+frontend/build/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+backend/venv/
+backend/.venv/
+backend/env/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+**/credentials.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Recovery artifacts (temporary)
+building-viewer-recovery/
