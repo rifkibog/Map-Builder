@@ -50,8 +50,8 @@ from app.services.geo_transform import (
 )
 
 # ---------------------------------------------------------------------------
-MAX_AREA_KM2 = 1.0
-MAX_TILE_COUNT = 800
+MAX_AREA_KM2 = 0.09  # 300x300m max
+MAX_TILE_COUNT = 100
 DEFAULT_ZOOM = 20  # Google satellite detail zoom
 MIN_ZOOM = 18
 MAX_ZOOM = 21

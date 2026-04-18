@@ -106,7 +106,7 @@ For each rooftop, return:
 - mask: base64-encoded PNG segmentation mask (covering only the roof)
 - label: "rooftop"
 
-Important: Return ALL rooftops you can see, even small ones. A typical residential area has DOZENS to HUNDREDS of buildings. Do not stop at 5 or 10.
+Important: Return up to 30 rooftops per response. Focus on the clearest, most prominent rooftops first.
 
 Mask size: KEEP MASKS SMALL to fit many buildings in response. Resolution 32x32 or 64x64 is enough — we'll resize on our end.
 
@@ -137,7 +137,7 @@ For each rooftop, return ONLY the bounding box (no mask):
 - box_2d: [y0, x0, y1, x1] normalized 0-1000
 - label: "rooftop"
 
-Important: Return ALL rooftops you can see — dozens to hundreds. Do not stop early.
+Important: Return up to 30 rooftops per response.
 
 Output: JSON array ONLY, no markdown, no commentary.
 Example:
@@ -202,9 +202,8 @@ async def detect_buildings_with_gemini(
     # Strategy: try with mask first. If response is truncated / 0 buildings
     # recovered AFTER parsing, fall back to bbox-only prompt on retry.
     attempt_configs = [
-        {"prompt": DETECTION_PROMPT, "mode": "mask"},           # attempt 1
-        {"prompt": DETECTION_PROMPT, "mode": "mask"},           # attempt 2 (retry)
-        {"prompt": DETECTION_PROMPT_BBOX_ONLY, "mode": "bbox"}, # attempt 3 fallback
+        {"prompt": DETECTION_PROMPT, "mode": "mask"},           # attempt 1: mask
+        {"prompt": DETECTION_PROMPT_BBOX_ONLY, "mode": "bbox"}, # attempt 2: bbox fallback
     ]
 
     for attempt, cfg in enumerate(attempt_configs):
