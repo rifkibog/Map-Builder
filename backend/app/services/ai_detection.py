@@ -108,9 +108,40 @@ For each rooftop, return:
 
 Important: Return ALL rooftops you can see, even small ones. A typical residential area has DOZENS to HUNDREDS of buildings. Do not stop at 5 or 10.
 
+Mask size: KEEP MASKS SMALL to fit many buildings in response. Resolution 32x32 or 64x64 is enough — we'll resize on our end.
+
 Output format: JSON array only, no markdown code fences, no commentary.
 Example:
 [{"box_2d": [120, 340, 180, 420], "mask": "iVBORw0KGgoAAAANS...", "label": "rooftop"}]
+"""
+
+# Prompt variant for bbox-only fallback (no mask, fits many more buildings)
+DETECTION_PROMPT_BBOX_ONLY = """You are analyzing a high-resolution Google satellite image of a residential area in Indonesia (aerial view, top-down).
+
+Task: Detect EVERY building rooftop visible in this image. This is a building census.
+
+What COUNTS as a rooftop:
+- House roofs (any color: black, red, grey, blue, white, brown)
+- Commercial building roofs
+- Shophouse (ruko) roofs
+- Warehouse roofs
+
+What does NOT count:
+- Roads, paths, driveways
+- Trees, vegetation, grass
+- Empty land, dirt, sand
+- Construction sites WITHOUT completed roofs
+- Water, vehicles, shadows
+
+For each rooftop, return ONLY the bounding box (no mask):
+- box_2d: [y0, x0, y1, x1] normalized 0-1000
+- label: "rooftop"
+
+Important: Return ALL rooftops you can see — dozens to hundreds. Do not stop early.
+
+Output: JSON array ONLY, no markdown, no commentary.
+Example:
+[{"box_2d": [120, 340, 180, 420], "label": "rooftop"}]
 """
 
 
@@ -167,34 +198,64 @@ async def detect_buildings_with_gemini(
     image_bytes = buf.getvalue()
 
     last_error: Optional[Exception] = None
-    for attempt in range(MAX_RETRIES + 1):  # initial + MAX_RETRIES
+
+    # Strategy: try with mask first. If response is truncated / 0 buildings
+    # recovered AFTER parsing, fall back to bbox-only prompt on retry.
+    attempt_configs = [
+        {"prompt": DETECTION_PROMPT, "mode": "mask"},           # attempt 1
+        {"prompt": DETECTION_PROMPT, "mode": "mask"},           # attempt 2 (retry)
+        {"prompt": DETECTION_PROMPT_BBOX_ONLY, "mode": "bbox"}, # attempt 3 fallback
+    ]
+
+    for attempt, cfg in enumerate(attempt_configs):
         try:
-            logger.info(f"Gemini detection attempt {attempt + 1}/{MAX_RETRIES + 1}")
-            response = await _call_gemini(client, image_bytes)
+            logger.info(
+                f"Gemini detection attempt {attempt + 1}/{len(attempt_configs)} "
+                f"(mode={cfg['mode']})"
+            )
+            response = await _call_gemini(client, image_bytes, prompt=cfg["prompt"])
             buildings = _parse_response(response, width, height)
-            logger.info(f"Gemini detected {len(buildings)} buildings")
-            return buildings
+
+            if buildings:
+                logger.info(f"Gemini detected {len(buildings)} buildings "
+                            f"(mode={cfg['mode']}, attempt={attempt + 1})")
+                return buildings
+
+            # 0 buildings returned — treat as soft failure, try again
+            logger.warning(f"Gemini returned 0 buildings on attempt {attempt + 1}")
+            last_error = RuntimeError(f"Empty result in mode={cfg['mode']}")
 
         except VertexAINotConfigured:
-            raise  # don't retry, it's a code/config issue
+            raise  # don't retry, it's a config issue
 
         except Exception as e:
             last_error = e
             logger.warning(f"Gemini attempt {attempt + 1} failed: {e}")
-            if attempt < MAX_RETRIES:
-                await asyncio.sleep(RETRY_DELAY_SECONDS)
 
+        # Sleep before next attempt (except after last)
+        if attempt < len(attempt_configs) - 1:
+            await asyncio.sleep(RETRY_DELAY_SECONDS)
+
+    # Even bbox-only returned 0 or failed — surface as VertexAIError
     raise VertexAIError(
-        f"Vertex AI failed after {MAX_RETRIES + 1} attempts. "
-        f"Last error: {last_error}"
+        f"Vertex AI returned no buildings after {len(attempt_configs)} attempts "
+        f"(including bbox-only fallback). Last error: {last_error}"
     )
 
 
 # ---------------------------------------------------------------------------
 # Gemini API call
 # ---------------------------------------------------------------------------
-async def _call_gemini(client, image_bytes: bytes) -> str:
-    """Single call to Gemini — returns raw text response."""
+async def _call_gemini(client, image_bytes: bytes,
+                       prompt: str = None) -> str:
+    """Single call to Gemini — returns raw text response.
+
+    Args:
+        prompt: Override prompt (e.g. DETECTION_PROMPT_BBOX_ONLY for fallback)
+    """
+    if prompt is None:
+        prompt = DETECTION_PROMPT
+
     # Build request parts: image + prompt
     image_part = genai_types.Part.from_bytes(
         data=image_bytes,
@@ -204,7 +265,7 @@ async def _call_gemini(client, image_bytes: bytes) -> str:
     # Configure to encourage reasonable output length & temperature
     config = genai_types.GenerateContentConfig(
         temperature=0.2,   # low temp for deterministic detection
-        max_output_tokens=8192,  # enough for ~100 buildings with masks
+        max_output_tokens=65536,  # max for Gemini 2.5 Flash; prevents mask truncation
         response_mime_type="application/json",
     )
 
@@ -215,7 +276,7 @@ async def _call_gemini(client, image_bytes: bytes) -> str:
             None,
             lambda: client.models.generate_content(
                 model=GEMINI_MODEL,
-                contents=[image_part, DETECTION_PROMPT],
+                contents=[image_part, prompt],
                 config=config,
             )
         ),
@@ -231,24 +292,87 @@ async def _call_gemini(client, image_bytes: bytes) -> str:
 # ---------------------------------------------------------------------------
 # Response parsing
 # ---------------------------------------------------------------------------
+def _extract_partial_json_objects(text: str) -> list:
+    """Recover valid JSON objects from truncated text.
+
+    Scans for balanced {...} braces (ignoring braces inside strings)
+    and attempts to json.loads each. Returns list of successfully
+    parsed objects. Used when the full JSON array is truncated.
+    """
+    items = []
+    depth = 0
+    start = -1
+    in_string = False
+    escape = False
+
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                snippet = text[start : i + 1]
+                try:
+                    obj = json.loads(snippet)
+                    if isinstance(obj, dict):
+                        items.append(obj)
+                except json.JSONDecodeError:
+                    pass
+                start = -1
+
+    return items
+
+
 def _parse_response(raw_text: str, img_width: int, img_height: int) -> List[DetectedBuilding]:
-    """Parse Gemini JSON response into DetectedBuilding list."""
+    """Parse Gemini JSON response into DetectedBuilding list.
+
+    Robust to response truncation: if the full JSON fails to parse,
+    tries to extract as many valid {...} objects as possible from the
+    partial response.
+    """
     # Strip markdown fences if Gemini didn't follow instructions
     text = raw_text.strip()
     text = re.sub(r"^```json\s*", "", text)
     text = re.sub(r"^```\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
 
+    items = None
     try:
         items = json.loads(text)
     except json.JSONDecodeError as e:
-        # Sometimes Gemini wraps in {"detections": [...]} — try that
+        logger.warning(f"Gemini JSON parse failed ({e}). Attempting recovery...")
+
+        # Strategy 1: maybe wrapped in {"detections": [...]}
         try:
             wrapped = json.loads(text)
             items = wrapped.get("detections") or wrapped.get("rooftops") or []
         except Exception:
-            logger.error(f"Failed to parse Gemini JSON: {e}. Raw: {text[:500]}")
-            return []
+            pass
+
+        # Strategy 2: partial-recovery — extract valid {...} objects
+        # one by one using a bracket-balanced scanner
+        if items is None:
+            items = _extract_partial_json_objects(text)
+            if items:
+                logger.info(f"Recovered {len(items)} buildings from truncated response")
+            else:
+                logger.error(f"Recovery failed. Raw (first 300 chars): {text[:300]}")
+                return []
 
     if not isinstance(items, list):
         logger.error(f"Expected list from Gemini, got {type(items)}")
