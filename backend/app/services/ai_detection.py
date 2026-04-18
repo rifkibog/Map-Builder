@@ -51,7 +51,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_LOCATION = "asia-southeast1"  # Jakarta region for low latency
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 5
-REQUEST_TIMEOUT = 60  # seconds per attempt
+REQUEST_TIMEOUT = 180  # 3 minutes per attempt, covers 90%+ Gemini response latency
 
 
 # ---------------------------------------------------------------------------
