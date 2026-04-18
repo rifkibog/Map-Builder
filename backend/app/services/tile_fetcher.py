@@ -143,7 +143,7 @@ async def fetch_and_stitch(
 
     sem = asyncio.Semaphore(CONCURRENT_LIMIT)
     tasks = []
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, http2=True) as client:
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         for x in range(x_min, x_max + 1):
             for y in range(y_min, y_max + 1):
                 tasks.append(_fetch_tile(client, sem, zoom, x, y))
