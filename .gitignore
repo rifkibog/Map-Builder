@@ -37,3 +37,7 @@ building-viewer-recovery/
 # Backup files
 *.bak
 *.backup
+
+# Pre-phase backup files (kept locally for safety, not tracked)
+*.pre-phase*
+*.pre-commit

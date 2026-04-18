@@ -10,6 +10,7 @@ from .database.bigquery import (
     search_buildings,
     get_stats_by_desa
 )
+from .routers import area_detect
 
 app = FastAPI(
     title="Building Viewer API",
@@ -25,6 +26,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(area_detect.router)
 
 
 @app.get("/")
