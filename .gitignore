@@ -33,3 +33,7 @@ Thumbs.db
 
 # Recovery artifacts (temporary)
 building-viewer-recovery/
+
+# Backup files
+*.bak
+*.backup
