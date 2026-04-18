@@ -14,3 +14,6 @@ Pillow==10.2.0
 shapely==2.0.2
 httpx==0.26.0
 openlocationcode==1.0.1
+
+# Phase 1.2 - Vertex AI Gemini Vision for building detection
+google-genai==1.3.0

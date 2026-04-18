@@ -41,3 +41,10 @@ building-viewer-recovery/
 # Pre-phase backup files (kept locally for safety, not tracked)
 *.pre-phase*
 *.pre-commit
+
+# Test output files (PNG previews, JSON responses from curl tests)
+backend/preview_*.png
+backend/test_*.png
+backend/*.test.png
+preview_*.png
+test_response_*.json

@@ -35,6 +35,13 @@ from app.services.image_processing import (
     detect_roofs,
     contours_to_polygons,
 )
+from app.services.ai_detection import (
+    detect_buildings_with_gemini,
+    buildings_to_polygons,
+    VertexAIError,
+    VertexAINotConfigured,
+)
+from app.config import settings
 from app.services.geo_transform import (
     make_pixel_to_lnglat,
     polygon_to_wkt,
@@ -62,6 +69,8 @@ class AreaPoint(BaseModel):
 
 class DetectionOverrides(BaseModel):
     """Optional detection parameter overrides. Anything not set uses defaults."""
+    # Backend selection: "gemini" (default) | "classical" (fallback CV)
+    backend: Optional[str] = None
     min_area_m2: Optional[float] = None
     max_area_m2: Optional[float] = None
     min_aspect_ratio: Optional[float] = None
@@ -173,14 +182,42 @@ async def area_detect(req: AreaDetectRequest):
     image = stitched["image"]
     width, height = stitched["size"]
 
-    # ---------------- Image processing ----------------
+    # ---------------- Detection: Gemini AI by default, classical CV fallback ----------------
     t_proc_start = time.time()
-    params = _apply_overrides(DetectionParams(), req.params)
-    contours = detect_roofs(image, stitched["bbox"], params=params)
-
     pixel_to_lnglat_fn = make_pixel_to_lnglat(stitched["bbox"], width, height)
-    polygons = contours_to_polygons(contours, pixel_to_lnglat_fn,
-                                    clip_polygon=area_poly)
+
+    # Pick backend: "gemini" (default) | "classical"
+    backend_choice = "gemini"
+    if req.params and req.params.backend:
+        backend_choice = req.params.backend.lower()
+
+    detection_backend_used = backend_choice
+
+    if backend_choice == "gemini":
+        try:
+            detected = await detect_buildings_with_gemini(
+                image, project=settings.GCP_PROJECT
+            )
+            polygons = buildings_to_polygons(
+                detected, pixel_to_lnglat_fn, clip_polygon=area_poly, use_mask=True
+            )
+        except VertexAINotConfigured as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Vertex AI not configured: {e}",
+            )
+        except VertexAIError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"AI detection service unavailable after retries: {e}",
+            )
+    else:
+        # Classical CV fallback (legacy HSV+Canny pipeline)
+        params = _apply_overrides(DetectionParams(), req.params)
+        contours = detect_roofs(image, stitched["bbox"], params=params)
+        polygons = contours_to_polygons(contours, pixel_to_lnglat_fn,
+                                        clip_polygon=area_poly)
+
     t_proc = time.time() - t_proc_start
 
     # ---------------- Build response ----------------
@@ -257,9 +294,31 @@ async def area_detect_preview(req: AreaDetectRequest):
     image = stitched["image"]
     width, height = stitched["size"]
 
-    # Run detection
-    params = _apply_overrides(DetectionParams(), req.params)
-    contours = detect_roofs(image, stitched["bbox"], params=params)
+    # Run detection — Gemini by default, classical CV if requested
+    backend_choice = "gemini"
+    if req.params and req.params.backend:
+        backend_choice = req.params.backend.lower()
+
+    # Contours: for preview we need pixel contours to draw on image
+    from app.services.ai_detection import buildings_to_pixel_contours_for_preview
+    contours = []
+
+    if backend_choice == "gemini":
+        try:
+            detected = await detect_buildings_with_gemini(
+                image, project=settings.GCP_PROJECT
+            )
+            contours = buildings_to_pixel_contours_for_preview(detected, use_mask=True)
+        except (VertexAIError, VertexAINotConfigured) as e:
+            # For preview, don't 503 — draw "Gemini failed" label on image
+            import logging
+            logging.warning(f"Gemini failed in preview, falling back: {e}")
+            params = _apply_overrides(DetectionParams(), req.params)
+            contours = detect_roofs(image, stitched["bbox"], params=params)
+            backend_choice = "classical (fallback)"
+    else:
+        params = _apply_overrides(DetectionParams(), req.params)
+        contours = detect_roofs(image, stitched["bbox"], params=params)
 
     # ---------------- Draw overlay ----------------
     # Use RGBA for semi-transparent red fill
@@ -303,7 +362,7 @@ async def area_detect_preview(req: AreaDetectRequest):
 
     # Add text label with count
     draw_final = ImageDraw.Draw(final)
-    label = f"Detected: {detected_count} buildings | Zoom: {req.zoom} | {width}x{height}px"
+    label = f"Detected: {detected_count} | Backend: {backend_choice} | Zoom: {req.zoom} | {width}x{height}px"
     # Draw shadow + text for readability
     draw_final.text((12, 12), label, fill=(0, 0, 0))
     draw_final.text((10, 10), label, fill=(255, 255, 255))
