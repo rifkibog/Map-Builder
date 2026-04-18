@@ -19,6 +19,9 @@ import time
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from PIL import Image, ImageDraw
+from io import BytesIO
 from pydantic import BaseModel, Field
 from shapely.geometry import Polygon, mapping
 
@@ -209,6 +212,116 @@ async def area_detect(req: AreaDetectRequest):
             "total": int((time.time() - t0) * 1000),
         },
         cache=cache_stats(),
+    )
+
+
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Preview endpoint — returns PNG with red polygon overlay for visual debug
+# ---------------------------------------------------------------------------
+@router.post("/preview", responses={200: {"content": {"image/png": {}}}})
+async def area_detect_preview(req: AreaDetectRequest):
+    """Same pipeline as /api/area-detect but returns PNG with overlay.
+
+    Useful for visual debugging: see exactly which rooftops were detected
+    and how well the polygons align with the actual buildings.
+    """
+    # Build shapely polygon
+    ring = [(p.lng, p.lat) for p in req.points]
+    if ring[0] != ring[-1]:
+        ring.append(ring[0])
+    area_poly = Polygon(ring)
+    if not area_poly.is_valid or area_poly.area <= 0:
+        raise HTTPException(status_code=400, detail="Invalid polygon")
+
+    min_lng, min_lat, max_lng, max_lat = area_poly.bounds
+    area_km2 = _area_km2(min_lng, min_lat, max_lng, max_lat)
+    if area_km2 > MAX_AREA_KM2:
+        raise HTTPException(status_code=413,
+                            detail=f"Area {area_km2:.2f} km² exceeds max {MAX_AREA_KM2} km²")
+
+    tile_count = estimate_tile_count(min_lng, min_lat, max_lng, max_lat, req.zoom)
+    if tile_count > MAX_TILE_COUNT:
+        raise HTTPException(status_code=413,
+                            detail=f"Tile count {tile_count} > cap {MAX_TILE_COUNT}")
+
+    # Fetch tiles
+    try:
+        stitched = await fetch_and_stitch(min_lng, min_lat, max_lng, max_lat,
+                                          zoom=req.zoom)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Tile fetch failed: {e}")
+
+    image = stitched["image"]
+    width, height = stitched["size"]
+
+    # Run detection
+    params = _apply_overrides(DetectionParams(), req.params)
+    contours = detect_roofs(image, stitched["bbox"], params=params)
+
+    # ---------------- Draw overlay ----------------
+    # Use RGBA for semi-transparent red fill
+    overlay = image.convert("RGBA").copy()
+    draw = ImageDraw.Draw(overlay, "RGBA")
+
+    # Draw user area polygon (yellow outline, thick)
+    # Convert lng/lat -> pixel space using same inverse math
+    from app.services.geo_transform import make_pixel_to_lnglat
+    # We need the INVERSE: lnglat -> pixel. Since pixel_to_lnglat is linear
+    # in pixel space, invert it directly.
+    def lnglat_to_pixel(lng, lat):
+        # Linear in longitude
+        px = (lng - min_lng) / (max_lng - min_lng) * width
+        # Mercator in latitude
+        def lat_to_mercY(lt):
+            return math.log(math.tan(math.pi / 4 + math.radians(lt) / 2))
+        mY_top = lat_to_mercY(max_lat)
+        mY_bot = lat_to_mercY(min_lat)
+        py = (lat_to_mercY(lat) - mY_top) / (mY_bot - mY_top) * height
+        return (px, py)
+
+    # User area — yellow outline
+    user_pts_px = [lnglat_to_pixel(lng, lat) for (lng, lat) in area_poly.exterior.coords]
+    draw.line(user_pts_px, fill=(255, 255, 0, 255), width=3)
+
+    # Detected roofs — red with semi-transparent fill
+    detected_count = 0
+    for cnt in contours:
+        pts = [(float(px), float(py)) for px, py in cnt]
+        # Close polygon for PIL
+        if pts[0] != pts[-1]:
+            pts.append(pts[0])
+        # Semi-transparent red fill
+        draw.polygon(pts, fill=(255, 0, 0, 100), outline=(255, 0, 0, 255))
+        detected_count += 1
+
+    # Composite overlay on base image
+    final = Image.alpha_composite(image.convert("RGBA"), overlay)
+    final = final.convert("RGB")
+
+    # Add text label with count
+    draw_final = ImageDraw.Draw(final)
+    label = f"Detected: {detected_count} buildings | Zoom: {req.zoom} | {width}x{height}px"
+    # Draw shadow + text for readability
+    draw_final.text((12, 12), label, fill=(0, 0, 0))
+    draw_final.text((10, 10), label, fill=(255, 255, 255))
+
+    # Encode PNG
+    buf = BytesIO()
+    final.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="image/png",
+        headers={
+            "X-Detected-Count": str(detected_count),
+            "X-Tile-Count": str(tile_count),
+            "X-Image-Size": f"{width}x{height}",
+            "Cache-Control": "no-cache",
+        },
     )
 
 
