@@ -37,12 +37,10 @@ from app.services.image_processing import (
 )
 from app.services.ai_detection import (
     detect_buildings_with_gemini,
-    detect_buildings_tiled,
     buildings_to_polygons,
     VertexAIError,
     VertexAINotConfigured,
 )
-from app.services.polygon_dedup import deduplicate_polygons
 from app.config import settings
 from app.services.geo_transform import (
     make_pixel_to_lnglat,
@@ -52,8 +50,8 @@ from app.services.geo_transform import (
 )
 
 # ---------------------------------------------------------------------------
-MAX_AREA_KM2 = 4.0
-MAX_TILE_COUNT = 3000
+MAX_AREA_KM2 = 1.0
+MAX_TILE_COUNT = 800
 DEFAULT_ZOOM = 20  # Google satellite detail zoom
 MIN_ZOOM = 18
 MAX_ZOOM = 21
@@ -197,21 +195,12 @@ async def area_detect(req: AreaDetectRequest):
 
     if backend_choice == "gemini":
         try:
-            # Tiled detection: split image into 3x3 grid, call Gemini parallel (concurrency 3)
-            detected = await detect_buildings_tiled(
-                image,
-                bbox_full=stitched["bbox"],
-                project=settings.GCP_PROJECT,
-                grid_size=3,
-                overlap_ratio=0.10,
-                concurrency=3,
+            detected = await detect_buildings_with_gemini(
+                image, project=settings.GCP_PROJECT
             )
-            # Convert detections (now in full-image pixel coords) to lng/lat polygons
             polygons = buildings_to_polygons(
                 detected, pixel_to_lnglat_fn, clip_polygon=area_poly, use_mask=True
             )
-            # Dedupe overlapping polygons from neighboring tiles
-            polygons = deduplicate_polygons(polygons, iou_threshold=0.5)
         except VertexAINotConfigured as e:
             raise HTTPException(
                 status_code=500,
@@ -316,46 +305,14 @@ async def area_detect_preview(req: AreaDetectRequest):
 
     if backend_choice == "gemini":
         try:
-            # Tiled detection (same as POST)
-            detected = await detect_buildings_tiled(
-                image,
-                bbox_full=stitched["bbox"],
-                project=settings.GCP_PROJECT,
-                grid_size=3,
-                overlap_ratio=0.10,
-                concurrency=3,
+            detected = await detect_buildings_with_gemini(
+                image, project=settings.GCP_PROJECT
             )
-            # Convert to lng/lat polygons + dedupe
-            polygons_lnglat = buildings_to_polygons(
-                detected,
-                make_pixel_to_lnglat(stitched["bbox"], width, height),
-                clip_polygon=None,  # don't clip for preview overlay
-                use_mask=True,
-            )
-            polygons_lnglat = deduplicate_polygons(polygons_lnglat, iou_threshold=0.5)
-
-            # For preview overlay we need PIXEL contours (not lng/lat).
-            # Re-project lng/lat polygons back to full-image pixel space.
-            import math as _math
-            min_lng, min_lat, max_lng, max_lat = stitched["bbox"]
-            def _lnglat_to_px(lng, lat):
-                px = (lng - min_lng) / (max_lng - min_lng) * width
-                def _lat_to_mY(lt):
-                    return _math.log(_math.tan(_math.pi / 4 + _math.radians(lt) / 2))
-                mY_top = _lat_to_mY(max_lat)
-                mY_bot = _lat_to_mY(min_lat)
-                py = (_lat_to_mY(lat) - mY_top) / (mY_bot - mY_top) * height
-                return px, py
-
-            import numpy as _np
-            contours = []
-            for poly in polygons_lnglat:
-                coords = list(poly.exterior.coords)
-                pts = [_lnglat_to_px(lng, lat) for lng, lat in coords]
-                contours.append(_np.array(pts, dtype=_np.int32))
+            contours = buildings_to_pixel_contours_for_preview(detected, use_mask=True)
         except (VertexAIError, VertexAINotConfigured) as e:
+            # For preview, don't 503 — draw "Gemini failed" label on image
             import logging
-            logging.warning(f"Gemini tiled failed in preview, falling back: {e}")
+            logging.warning(f"Gemini failed in preview, falling back: {e}")
             params = _apply_overrides(DetectionParams(), req.params)
             contours = detect_roofs(image, stitched["bbox"], params=params)
             backend_choice = "classical (fallback)"
